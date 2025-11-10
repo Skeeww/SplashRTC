@@ -31,6 +31,10 @@
       />
       <button onclick="sendMessage()">Send</button>
     </div>
+    <div>
+      <button onclick="createRoom()">Create Room</button>
+      <button onclick="leaveRoom()">Leave Room</button>
+    </div>
     <script>
       let maxTries = 5;
       let ws;
@@ -49,6 +53,16 @@
         inputContainer.value = "";
         addMessage(`sent ${msg}`);
         ws.send(msg);
+      }
+
+      function createRoom() {
+        inputContainer.value = '{"type": "create_room"}';
+        sendMessage();
+      }
+
+      function leaveRoom() {
+        inputContainer.value = '{"type": "leave_room"}';
+        sendMessage();
       }
 
       function connect() {
