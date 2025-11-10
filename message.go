@@ -1,5 +1,7 @@
 package main
 
+import "encoding/json"
+
 type ErrorMessage struct {
 	Error  string `json:"error"`
 	Reason string `json:"reason"`
@@ -18,24 +20,13 @@ type ServerToUserMessage struct {
 	Type string `json:"type"`
 }
 
-type UsersListMessage struct {
+type UsersListReply struct {
 	ServerToUserMessage
 	Users []*User `json:"users"`
 }
 
-type RoomJoinedMessage struct {
-	ServerToUserMessage
-	Room *Room `json:"room"`
-}
-
-type RoomLeavedMessage struct {
-	ServerToUserMessage
-	Room  *Room  `json:"room"`
-	Cause string `json:"cause"`
-}
-
-func NewMessageUsersList(users []*User) UsersListMessage {
-	return UsersListMessage{
+func NewReplyUsersList(users []*User) UsersListReply {
+	return UsersListReply{
 		ServerToUserMessage: ServerToUserMessage{
 			Type: "users_list",
 		},
@@ -43,35 +34,69 @@ func NewMessageUsersList(users []*User) UsersListMessage {
 	}
 }
 
-func NewMessageErrorRoomCreation(reason string) ErrorMessage {
+func NewReplyErrorRoomCreate(reason string) ErrorMessage {
 	return ErrorMessage{
 		Error:  "create_room_failure",
 		Reason: reason,
 	}
 }
 
-func NewMessageRoomJoined(room *Room) RoomJoinedMessage {
-	return RoomJoinedMessage{
-		ServerToUserMessage: ServerToUserMessage{
-			Type: "room_joined",
-		},
-		Room: room,
-	}
+type RoomLeaveReply struct {
+	ServerToUserMessage
+	Room  *Room  `json:"room"`
+	Cause string `json:"cause"`
 }
 
-func NewMessageErrorRoomLeave(reason string) ErrorMessage {
+func NewReplyErrorRoomLeave(reason string) ErrorMessage {
 	return ErrorMessage{
 		Error:  "leave_room_failure",
 		Reason: reason,
 	}
 }
 
-func NewMessageRoomLeaved(room *Room, cause string) RoomLeavedMessage {
-	return RoomLeavedMessage{
+func NewReplyRoomLeaved(room *Room, cause string) RoomLeaveReply {
+	return RoomLeaveReply{
 		ServerToUserMessage: ServerToUserMessage{
 			Type: "room_leaved",
 		},
 		Room:  room,
 		Cause: cause,
+	}
+}
+
+type RoomJoinRequest struct {
+	UserToServerMessage
+	RoomId string `json:"room_id"`
+}
+
+type RoomJoinReply struct {
+	ServerToUserMessage
+	Room *Room `json:"room"`
+}
+
+func NewReplyErrorRoomJoin(reason string) ErrorMessage {
+	return ErrorMessage{
+		Error:  "join_room_failure",
+		Reason: reason,
+	}
+}
+
+func NewRequestRoomJoin(msg []byte) (RoomJoinRequest, error) {
+	request := RoomJoinRequest{}
+
+	err := json.Unmarshal(msg, &request)
+	if err != nil {
+		return request, err
+	}
+
+	return request, nil
+}
+
+func NewReplyRoomJoined(room *Room) RoomJoinReply {
+	return RoomJoinReply{
+		ServerToUserMessage: ServerToUserMessage{
+			Type: "room_joined",
+		},
+		Room: room,
 	}
 }

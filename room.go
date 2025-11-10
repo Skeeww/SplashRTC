@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,7 +16,7 @@ type Room struct {
 	Users      []*User `json:"users"`
 	usersMutex *sync.Mutex
 
-	timeoutDestroyStarted       bool
+	timeoutDestroyStarted       *atomic.Bool
 	cancelTimeoutDestroyChannel chan bool
 }
 
@@ -30,9 +31,10 @@ func NewRoom() *Room {
 		Users:      make([]*User, 0),
 		usersMutex: new(sync.Mutex),
 
-		timeoutDestroyStarted:       false,
+		timeoutDestroyStarted:       new(atomic.Bool),
 		cancelTimeoutDestroyChannel: make(chan bool),
 	}
+	room.timeoutDestroyStarted.Store(false)
 
 	AddRoom(room)
 
@@ -47,12 +49,13 @@ func (room *Room) AddUser(user *User) error {
 		return errors.New("user already is the room")
 	}
 
-	if room.timeoutDestroyStarted {
+	if room.timeoutDestroyStarted.Load() {
 		room.stopDestroyTimeout()
 		logger.Info(fmt.Sprintf("room %s destroy cancel, new user joined the room", room.Id))
 	}
 
 	room.Users = append(room.Users, user)
+	logger.Debug(fmt.Sprintf("add user %s to room %s", user.Id, room.Id))
 
 	return nil
 }
@@ -70,6 +73,8 @@ func (room *Room) RemoveUser(user *User) error {
 
 	if len(room.Users) == 0 {
 		logger.Info(fmt.Sprintf("room %s is empty, leaving timeout of 30 seconds before destroy", room.Id))
+
+		room.timeoutDestroyStarted.Store(true)
 		go room.startDestroyTimeout()
 	}
 
@@ -80,7 +85,9 @@ func (room *Room) Destroy() {
 	close(room.cancelTimeoutDestroyChannel)
 
 	for _, user := range room.Users {
-		user.LeaveCurrentRoom("room has been destroyed")
+		if err := user.LeaveCurrentRoom("room has been destroyed"); err != nil {
+			logger.Warn(fmt.Sprintf("user %s failed leaving room %s, %s", user.Id, room.Id, err.Error()))
+		}
 	}
 
 	roomsMutex.Lock()
@@ -91,16 +98,11 @@ func (room *Room) Destroy() {
 }
 
 func (room *Room) startDestroyTimeout() {
-	if room.timeoutDestroyStarted {
-		return
-	}
-
 	timer := time.NewTimer(30 * time.Second)
-	room.timeoutDestroyStarted = true
 
 	defer func() {
 		timer.Stop()
-		room.timeoutDestroyStarted = false
+		room.timeoutDestroyStarted.Store(false)
 	}()
 
 	select {
@@ -113,7 +115,7 @@ func (room *Room) startDestroyTimeout() {
 }
 
 func (room *Room) stopDestroyTimeout() {
-	if !room.timeoutDestroyStarted {
+	if !room.timeoutDestroyStarted.Load() {
 		return
 	}
 

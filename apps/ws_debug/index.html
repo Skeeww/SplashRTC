@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Websocket Debug</title>
+    <style>
+      p {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      style="
+        width: 100vw;
+        height: 100%;
+        background: #1a1a1a;
+        color: #ffffff;
+        padding: 5px;
+      "
+      id="messages"
+    ></div>
+    <div style="display: flex">
+      <input
+        id="input_msg"
+        style="flex-grow: 1"
+        type="text"
+        placeholder="Enter a message..."
+      />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+    <div>
+      <button onclick="createRoom()">Create Room</button>
+      <button onclick="leaveRoom()">Leave Room</button>
+    </div>
+    <script>
+      let maxTries = 5;
+      let ws;
+
+      const inputContainer = document.getElementById("input_msg");
+      const messagesContainer = document.getElementById("messages");
+
+      function addMessage(msg) {
+        const text = document.createElement("p");
+        text.innerText = msg;
+        messagesContainer.append(text);
+      }
+
+      function sendMessage() {
+        const msg = inputContainer.value;
+        inputContainer.value = "";
+        addMessage(`sent ${msg}`);
+        ws.send(msg);
+      }
+
+      function createRoom() {
+        inputContainer.value = '{"type": "create_room"}';
+        sendMessage();
+      }
+
+      function leaveRoom() {
+        inputContainer.value = '{"type": "leave_room"}';
+        sendMessage();
+      }
+
+      function connect() {
+        if (maxTries === 0) {
+          addMessage("no further connect retry (maxTries reached)");
+          return;
+        }
+        maxTries--;
+
+        addMessage("trying connecting to websocket server...");
+
+        ws = new WebSocket("http://127.0.0.1:8888");
+        ws.addEventListener("open", (e) => {
+          addMessage(`websocket open state: ${JSON.stringify(e)}`);
+          maxTries = 5;
+        });
+
+        ws.addEventListener("error", (e) => {
+          addMessage(`websocket error state: ${JSON.stringify(e)}`);
+        });
+
+        ws.addEventListener("message", (e) => {
+          addMessage(`websocket new message: ${e.data}`);
+        });
+
+        ws.addEventListener("close", (e) => {
+          addMessage(`websocket close state: ${JSON.stringify(e)}`);
+          setTimeout(() => {
+            connect();
+          }, 5000);
+        });
+      }
+
+      connect();
+    </script>
+  </body>
+</html>

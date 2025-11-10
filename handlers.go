@@ -22,6 +22,8 @@ func (user *User) handleMessage(msg []byte) {
 		user.handleCreateRoom()
 	case "leave_room":
 		user.handleLeaveRoom()
+	case "join_room":
+		user.handleJoinRoom(msg)
 	default:
 		logger.Warn(fmt.Sprintf("received message of unknown type from %s", user.Id))
 	}
@@ -33,7 +35,7 @@ func (user *User) handleUsersList() {
 
 func (user *User) handleCreateRoom() {
 	if user.Room != nil {
-		user.SendMessageJson(NewMessageErrorRoomCreation("you are already in a room"))
+		user.SendMessageJson(NewReplyErrorRoomCreate("you are already in a room"))
 		return
 	}
 
@@ -42,19 +44,38 @@ func (user *User) handleCreateRoom() {
 
 	if err := user.JoinRoom(room); err != nil {
 		room.Destroy()
-		user.SendMessageJson(NewMessageErrorRoomCreation(err.Error()))
+		user.SendMessageJson(NewReplyErrorRoomCreate(err.Error()))
 		return
 	}
 }
 
 func (user *User) handleLeaveRoom() {
 	if user.Room == nil {
-		user.SendMessageJson(NewMessageErrorRoomLeave("you are not in a room"))
+		user.SendMessageJson(NewReplyErrorRoomLeave("you are not in a room"))
 		return
 	}
 
 	if err := user.LeaveCurrentRoom("leave action"); err != nil {
-		user.SendMessageJson(NewMessageErrorRoomLeave(err.Error()))
+		user.SendMessageJson(NewReplyErrorRoomLeave(err.Error()))
+		return
+	}
+}
+
+func (user *User) handleJoinRoom(msg []byte) {
+	request, err := NewRequestRoomJoin(msg)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorRoomJoin(err.Error()))
+		return
+	}
+
+	room := GetRoom(request.RoomId)
+	if room == nil {
+		user.SendMessageJson(NewReplyErrorRoomJoin("the room does not exist"))
+		return
+	}
+
+	if err := user.JoinRoom(room); err != nil {
+		user.SendMessageJson(NewReplyErrorRoomJoin(err.Error()))
 		return
 	}
 }

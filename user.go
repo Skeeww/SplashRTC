@@ -36,7 +36,9 @@ func NewUser(conn *websocket.Conn) *User {
 			_, data, err := user.Conn.ReadMessage()
 			if err != nil {
 				if user.Room != nil {
-					user.LeaveCurrentRoom("user disconnected")
+					if err := user.LeaveCurrentRoom("user disconnected"); err != nil {
+						logger.Warn(fmt.Sprintf("user %s failed leaving is current room during disconnection, %s", user.Id, err.Error()))
+					}
 				}
 				RemoveUser(user)
 				return
@@ -52,7 +54,9 @@ func NewUser(conn *websocket.Conn) *User {
 
 func (user *User) SendMessage(msg string) {
 	buffer := bytes.NewBufferString(msg)
-	user.Conn.WriteMessage(websocket.TextMessage, buffer.Bytes())
+	if err := user.Conn.WriteMessage(websocket.TextMessage, buffer.Bytes()); err != nil {
+		logger.Warn(fmt.Sprintf("failed sending message to user %s, %s", user.Id, err.Error()))
+	}
 }
 
 func (user *User) SendMessageJson(msg any) {
@@ -61,19 +65,23 @@ func (user *User) SendMessageJson(msg any) {
 		logger.Warn(fmt.Sprintf("failed sending json message, %s", err.Error()))
 		return
 	}
-	user.Conn.WriteMessage(websocket.TextMessage, payload)
+	if err := user.Conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+		logger.Warn(fmt.Sprintf("failed sending json message to user %s, %s", user.Id, err.Error()))
+	}
 }
 
 func (user *User) JoinRoom(room *Room) error {
 	if user.Room != nil {
-		return user.LeaveCurrentRoom("leave current room, because joining another one")
+		if err := user.LeaveCurrentRoom("leave current room, because joining another one"); err != nil {
+			return err
+		}
 	}
 
 	if err := room.AddUser(user); err != nil {
 		return fmt.Errorf("failed adding user to room, %w", err)
 	}
 
-	user.SendMessageJson(NewMessageRoomJoined(room))
+	user.SendMessageJson(NewReplyRoomJoined(room))
 	logger.Info(fmt.Sprintf("user %s join the room %s", user.Id, room.Id))
 
 	user.Room = room
@@ -90,7 +98,7 @@ func (user *User) LeaveCurrentRoom(cause string) error {
 		return fmt.Errorf("failed removing user from room, %w", err)
 	}
 
-	user.SendMessageJson(NewMessageRoomLeaved(user.Room, cause))
+	user.SendMessageJson(NewReplyRoomLeaved(user.Room, cause))
 	logger.Info(fmt.Sprintf("user %s leave the room %s, reason: %s", user.Id, user.Room.Id, cause))
 
 	user.Room = nil
@@ -144,7 +152,7 @@ func Broadcast(msg string) {
 
 func SendUsersList(sendFunc func(string)) {
 	usersMutex.RLock()
-	message := NewMessageUsersList(users)
+	message := NewReplyUsersList(users)
 	usersMutex.RUnlock()
 
 	payload, err := json.Marshal(message)
