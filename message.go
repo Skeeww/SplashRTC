@@ -59,6 +59,13 @@ func NewMessageRoomJoined(room *Room) RoomJoinedMessage {
 	}
 }
 
+func NewMessageErrorRoomLeave(reason string) ErrorMessage {
+	return ErrorMessage{
+		Error:  "leave_room_failure",
+		Reason: reason,
+	}
+}
+
 func NewMessageRoomLeaved(room *Room, cause string) RoomLeavedMessage {
 	return RoomLeavedMessage{
 		ServerToUserMessage: ServerToUserMessage{

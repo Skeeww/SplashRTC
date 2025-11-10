@@ -20,6 +20,8 @@ func (user *User) handleMessage(msg []byte) {
 		user.handleUsersList()
 	case "create_room":
 		user.handleCreateRoom()
+	case "leave_room":
+		user.handleLeaveRoom()
 	default:
 		logger.Warn(fmt.Sprintf("received message of unknown type from %s", user.Id))
 	}
@@ -41,6 +43,18 @@ func (user *User) handleCreateRoom() {
 	if err := user.JoinRoom(room); err != nil {
 		room.Destroy()
 		user.SendMessageJson(NewMessageErrorRoomCreation(err.Error()))
+		return
+	}
+}
+
+func (user *User) handleLeaveRoom() {
+	if user.Room == nil {
+		user.SendMessageJson(NewMessageErrorRoomLeave("you are not in a room"))
+		return
+	}
+
+	if err := user.LeaveCurrentRoom("leave action"); err != nil {
+		user.SendMessageJson(NewMessageErrorRoomLeave(err.Error()))
 		return
 	}
 }
