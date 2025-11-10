@@ -1,6 +1,10 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/pion/webrtc/v4"
+)
 
 type ErrorMessage struct {
 	Error  string `json:"error"`
@@ -99,4 +103,66 @@ func NewReplyRoomJoined(room *Room) RoomJoinReply {
 		},
 		Room: room,
 	}
+}
+
+type PublishRequest struct {
+	UserToServerMessage
+	SdpOffer webrtc.SessionDescription `json:"sdp_offer"`
+}
+
+type PublishReply struct {
+	ServerToUserMessage
+	Stream    *IncomingStream           `json:"stream"`
+	SdpAnswer webrtc.SessionDescription `json:"sdp_answer"`
+}
+
+func NewReplyErrorPublish(reason string) ErrorMessage {
+	return ErrorMessage{
+		Error:  "publish_failure",
+		Reason: reason,
+	}
+}
+
+func NewRequestPublish(msg []byte) (PublishRequest, error) {
+	request := PublishRequest{}
+
+	err := json.Unmarshal(msg, &request)
+	if err != nil {
+		return request, err
+	}
+
+	return request, nil
+}
+
+func NewReplyPublish(stream *IncomingStream, sdp webrtc.SessionDescription) PublishReply {
+	return PublishReply{
+		ServerToUserMessage: ServerToUserMessage{
+			Type: "published",
+		},
+		Stream:    stream,
+		SdpAnswer: sdp,
+	}
+}
+
+type IceCandidateRequest struct {
+	UserToServerMessage
+	IceCandidate webrtc.ICECandidateInit `json:"candidate"`
+}
+
+func NewReplyErrorIceCandidate(reason string) ErrorMessage {
+	return ErrorMessage{
+		Error:  "icecandidate_failure",
+		Reason: reason,
+	}
+}
+
+func NewRequestIceCandidate(msg []byte) (IceCandidateRequest, error) {
+	request := IceCandidateRequest{}
+
+	err := json.Unmarshal(msg, &request)
+	if err != nil {
+		return request, err
+	}
+
+	return request, nil
 }

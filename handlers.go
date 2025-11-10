@@ -24,6 +24,10 @@ func (user *User) handleMessage(msg []byte) {
 		user.handleLeaveRoom()
 	case "join_room":
 		user.handleJoinRoom(msg)
+	case "publish":
+		user.handlePublish(msg)
+	case "icecandidate":
+		user.handleIceCandidate(msg)
 	default:
 		logger.Warn(fmt.Sprintf("received message of unknown type from %s", user.Id))
 	}
@@ -78,4 +82,48 @@ func (user *User) handleJoinRoom(msg []byte) {
 		user.SendMessageJson(NewReplyErrorRoomJoin(err.Error()))
 		return
 	}
+}
+
+func (user *User) handlePublish(msg []byte) {
+	payload, err := NewRequestPublish(msg)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorPublish(err.Error()))
+		return
+	}
+
+	stream, err := NewIncomingStream(user)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorPublish(err.Error()))
+		return
+	}
+
+	err = stream.PeerConnection.SetRemoteDescription(payload.SdpOffer)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorPublish(err.Error()))
+		return
+	}
+
+	sdpAnswer, err := stream.PeerConnection.CreateAnswer(nil)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorPublish(err.Error()))
+		return
+	}
+
+	err = stream.PeerConnection.SetLocalDescription(sdpAnswer)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorPublish(err.Error()))
+		return
+	}
+
+	user.SendMessageJson(NewReplyPublish(stream, sdpAnswer))
+}
+
+func (user *User) handleIceCandidate(msg []byte) {
+	request, err := NewRequestIceCandidate(msg)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorIceCandidate(err.Error()))
+		return
+	}
+
+	user.AddIceCandidate(request.IceCandidate)
 }

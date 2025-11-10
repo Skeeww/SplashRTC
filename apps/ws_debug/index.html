@@ -34,10 +34,22 @@
     <div>
       <button onclick="createRoom()">Create Room</button>
       <button onclick="leaveRoom()">Leave Room</button>
+      <button onclick="publish()">Publish stream</button>
     </div>
     <script>
       let maxTries = 5;
       let ws;
+      let localPc = new RTCPeerConnection({
+        iceServers: [{ urls: ["stun:stun2.l.google.com:19302"] }],
+        bundlePolicy: "max-bundle",
+      });
+      localPc.addEventListener("icecandidate", (e) => {
+        sendWs(
+          `{"type": "icecandidate", "candidate": ${JSON.stringify(
+            e.candidate
+          )}}`
+        );
+      });
 
       const inputContainer = document.getElementById("input_msg");
       const messagesContainer = document.getElementById("messages");
@@ -51,18 +63,46 @@
       function sendMessage() {
         const msg = inputContainer.value;
         inputContainer.value = "";
+        sendWs(msg);
+      }
+
+      function createRoom() {
+        sendWs('{"type": "create_room"}');
+      }
+
+      function leaveRoom() {
+        sendWs('{"type": "leave_room"}');
+      }
+
+      function sendWs(msg) {
         addMessage(`sent ${msg}`);
         ws.send(msg);
       }
 
-      function createRoom() {
-        inputContainer.value = '{"type": "create_room"}';
-        sendMessage();
+      async function publish() {
+        let stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true,
+        });
+
+        let video = document.createElement("video");
+        video.srcObject = stream;
+        video.width = 400;
+        video.onloadedmetadata = () => video.play();
+        document.body.appendChild(video);
+
+        stream.getTracks().forEach((track) => {
+          localPc.addTrack(track);
+        });
+        const offer = await localPc.createOffer();
+        await localPc.setLocalDescription(offer);
+
+        sendWs(`{"type": "publish", "sdp_offer": ${JSON.stringify(offer)}}`);
       }
 
-      function leaveRoom() {
-        inputContainer.value = '{"type": "leave_room"}';
-        sendMessage();
+      async function finishPublish(msg) {
+        let { sdp_answer } = msg;
+        await localPc.setRemoteDescription(sdp_answer);
       }
 
       function connect() {
@@ -86,6 +126,10 @@
 
         ws.addEventListener("message", (e) => {
           addMessage(`websocket new message: ${e.data}`);
+          const msg = JSON.parse(e.data);
+          if (msg.type === "published") {
+            finishPublish(msg);
+          }
         });
 
         ws.addEventListener("close", (e) => {

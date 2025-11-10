@@ -16,6 +16,9 @@ type Room struct {
 	Users      []*User `json:"users"`
 	usersMutex *sync.Mutex
 
+	InStreams      map[string]*IncomingStream `json:"in_streams"`
+	inStreamsMutex *sync.Mutex
+
 	timeoutDestroyStarted       *atomic.Bool
 	cancelTimeoutDestroyChannel chan bool
 }
@@ -30,6 +33,9 @@ func NewRoom() *Room {
 		Id:         uuid.NewString(),
 		Users:      make([]*User, 0),
 		usersMutex: new(sync.Mutex),
+
+		InStreams:      make(map[string]*IncomingStream),
+		inStreamsMutex: new(sync.Mutex),
 
 		timeoutDestroyStarted:       new(atomic.Bool),
 		cancelTimeoutDestroyChannel: make(chan bool),
@@ -68,6 +74,14 @@ func (room *Room) RemoveUser(user *User) error {
 		return errors.New("user is not in the room")
 	}
 
+	for _, stream := range room.GetInStreamsByPublisher(user) {
+		stream.Teardown()
+		if err := room.RemoveInStream(stream); err != nil {
+			logger.Warn("failed removing stream", stream.Id)
+			continue
+		}
+	}
+
 	idx := slices.Index(room.Users, user)
 	room.Users = slices.Delete(room.Users, idx, idx+1)
 
@@ -95,6 +109,52 @@ func (room *Room) Destroy() {
 	roomsMutex.Unlock()
 
 	logger.Info(fmt.Sprintf("room %s has been destroyed", room.Id))
+}
+
+func (room *Room) AddInStream(stream *IncomingStream) error {
+	room.inStreamsMutex.Lock()
+	defer room.inStreamsMutex.Unlock()
+
+	if _, ok := room.InStreams[stream.Id]; ok {
+		return errors.New("this stream has already been published in this room")
+	}
+
+	room.InStreams[stream.Id] = stream
+
+	// TODO: broadcast message in room to update streams
+
+	return nil
+}
+
+func (room *Room) RemoveInStream(stream *IncomingStream) error {
+	room.inStreamsMutex.Lock()
+	defer room.inStreamsMutex.Unlock()
+
+	if _, ok := room.InStreams[stream.Id]; !ok {
+		return errors.New("this stream has not been published in this room")
+	}
+
+	delete(room.InStreams, stream.Id)
+	logger.Debug(fmt.Sprintf("remove in stream %s from %s", stream.Id, stream.Publisher.Id))
+
+	// TODO: broadcast message in room to update streams
+
+	return nil
+}
+
+func (room *Room) GetInStreamsByPublisher(user *User) []*IncomingStream {
+	room.inStreamsMutex.Lock()
+	defer room.inStreamsMutex.Unlock()
+
+	streams := make([]*IncomingStream, 0)
+	for _, stream := range room.InStreams {
+		if stream.Publisher != user {
+			continue
+		}
+		streams = append(streams, stream)
+	}
+
+	return streams
 }
 
 func (room *Room) startDestroyTimeout() {

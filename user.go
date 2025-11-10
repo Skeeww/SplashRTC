@@ -11,12 +11,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/pion/webrtc/v4"
 )
 
 type User struct {
 	Id   string          `json:"id"`
 	Conn *websocket.Conn `json:"-"`
 	Room *Room           `json:"-"`
+
+	IceCandidates      []webrtc.ICECandidateInit `json:"-"`
+	iceCandidatesMutex *sync.Mutex
 }
 
 var (
@@ -26,9 +30,11 @@ var (
 
 func NewUser(conn *websocket.Conn) *User {
 	user := &User{
-		Id:   uuid.NewString(),
-		Conn: conn,
-		Room: nil,
+		Id:                 uuid.NewString(),
+		Conn:               conn,
+		Room:               nil,
+		IceCandidates:      make([]webrtc.ICECandidateInit, 0),
+		iceCandidatesMutex: new(sync.Mutex),
 	}
 
 	go func() {
@@ -104,6 +110,29 @@ func (user *User) LeaveCurrentRoom(cause string) error {
 	user.Room = nil
 
 	return nil
+}
+
+func (user *User) AddIceCandidate(candidate webrtc.ICECandidateInit) {
+	user.iceCandidatesMutex.Lock()
+	defer user.iceCandidatesMutex.Unlock()
+
+	user.IceCandidates = append(user.IceCandidates, candidate)
+	if user.Room == nil {
+		logger.Info(fmt.Sprintf("user %s send candidates before joining room, bufferring", user.Id))
+		return
+	}
+
+	inStreams := user.Room.GetInStreamsByPublisher(user)
+	for _, stream := range inStreams {
+		stream.AddIceCandidate(candidate)
+	}
+}
+
+func (user *User) GetIceCandidates() []webrtc.ICECandidateInit {
+	user.iceCandidatesMutex.Lock()
+	defer user.iceCandidatesMutex.Unlock()
+
+	return user.IceCandidates
 }
 
 func (user *User) String() string {
