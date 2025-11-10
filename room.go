@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,11 +11,12 @@ import (
 )
 
 type Room struct {
-	Id              string  `json:"id"`
-	Users           []*User `json:"users"`
-	usersMutex      *sync.Mutex
-	cleanRoomTicker *time.Ticker
-	cancel          context.CancelFunc
+	Id         string  `json:"id"`
+	Users      []*User `json:"users"`
+	usersMutex *sync.Mutex
+
+	timeoutDestroyStarted       bool
+	cancelTimeoutDestroyChannel chan bool
 }
 
 var (
@@ -26,16 +26,13 @@ var (
 
 func NewRoom() *Room {
 	room := &Room{
-		Id:              uuid.NewString(),
-		Users:           make([]*User, 0),
-		usersMutex:      new(sync.Mutex),
-		cleanRoomTicker: time.NewTicker(30 * time.Second),
-		cancel:          nil,
-	}
+		Id:         uuid.NewString(),
+		Users:      make([]*User, 0),
+		usersMutex: new(sync.Mutex),
 
-	ctx, cancel := context.WithCancel(context.Background())
-	room.cancel = cancel
-	go room.checkCleanRoom(ctx)
+		timeoutDestroyStarted:       false,
+		cancelTimeoutDestroyChannel: make(chan bool),
+	}
 
 	AddRoom(room)
 
@@ -48,6 +45,11 @@ func (room *Room) AddUser(user *User) error {
 
 	if slices.Contains(room.Users, user) {
 		return errors.New("user already is the room")
+	}
+
+	if room.timeoutDestroyStarted {
+		room.stopDestroyTimeout()
+		logger.Info(fmt.Sprintf("room %s destroy cancel, new user joined the room", room.Id))
 	}
 
 	room.Users = append(room.Users, user)
@@ -66,11 +68,16 @@ func (room *Room) RemoveUser(user *User) error {
 	idx := slices.Index(room.Users, user)
 	room.Users = slices.Delete(room.Users, idx, idx+1)
 
+	if len(room.Users) == 0 {
+		logger.Info(fmt.Sprintf("room %s is empty, leaving timeout of 30 seconds before destroy", room.Id))
+		go room.startDestroyTimeout()
+	}
+
 	return nil
 }
 
 func (room *Room) Destroy() {
-	room.cancel()
+	close(room.cancelTimeoutDestroyChannel)
 
 	for _, user := range room.Users {
 		user.LeaveCurrentRoom("room has been destroyed")
@@ -83,26 +90,34 @@ func (room *Room) Destroy() {
 	logger.Info(fmt.Sprintf("room %s has been destroyed", room.Id))
 }
 
-func (room *Room) checkCleanRoom(ctx context.Context) {
-	defer room.cleanRoomTicker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-room.cleanRoomTicker.C:
-			roomsMutex.RLock()
-			users := room.Users
-			roomsMutex.RUnlock()
-
-			if len(users) > 0 {
-				continue
-			}
-
-			room.Destroy()
-			return
-		}
+func (room *Room) startDestroyTimeout() {
+	if room.timeoutDestroyStarted {
+		return
 	}
+
+	timer := time.NewTimer(30 * time.Second)
+	room.timeoutDestroyStarted = true
+
+	defer func() {
+		timer.Stop()
+		room.timeoutDestroyStarted = false
+	}()
+
+	select {
+	case <-room.cancelTimeoutDestroyChannel:
+		return
+	case <-timer.C:
+		room.Destroy()
+		return
+	}
+}
+
+func (room *Room) stopDestroyTimeout() {
+	if !room.timeoutDestroyStarted {
+		return
+	}
+
+	room.cancelTimeoutDestroyChannel <- true
 }
 
 func AddRoom(room *Room) {
