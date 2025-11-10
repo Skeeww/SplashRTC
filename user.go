@@ -66,14 +66,16 @@ func (user *User) SendMessageJson(msg any) {
 
 func (user *User) JoinRoom(room *Room) error {
 	if user.Room != nil {
-		return user.LeaveCurrentRoom("leave current room, because joining another one")
+		if err := user.LeaveCurrentRoom("leave current room, because joining another one"); err != nil {
+			return err
+		}
 	}
 
 	if err := room.AddUser(user); err != nil {
 		return fmt.Errorf("failed adding user to room, %w", err)
 	}
 
-	user.SendMessageJson(NewMessageRoomJoined(room))
+	user.SendMessageJson(NewReplyRoomJoined(room))
 	logger.Info(fmt.Sprintf("user %s join the room %s", user.Id, room.Id))
 
 	user.Room = room
@@ -90,7 +92,7 @@ func (user *User) LeaveCurrentRoom(cause string) error {
 		return fmt.Errorf("failed removing user from room, %w", err)
 	}
 
-	user.SendMessageJson(NewMessageRoomLeaved(user.Room, cause))
+	user.SendMessageJson(NewReplyRoomLeaved(user.Room, cause))
 	logger.Info(fmt.Sprintf("user %s leave the room %s, reason: %s", user.Id, user.Room.Id, cause))
 
 	user.Room = nil
@@ -144,7 +146,7 @@ func Broadcast(msg string) {
 
 func SendUsersList(sendFunc func(string)) {
 	usersMutex.RLock()
-	message := NewMessageUsersList(users)
+	message := NewReplyUsersList(users)
 	usersMutex.RUnlock()
 
 	payload, err := json.Marshal(message)

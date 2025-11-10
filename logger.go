@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type LogLevel int
 
@@ -64,7 +67,7 @@ func (l *Logger) Log(level LogLevel, args ...any) {
 	if l.Level > level {
 		return
 	}
-	fmt.Printf("(%s)\t[%s]\t%v\n", l.Name, level.String(), args)
+	fmt.Printf("%s\t(%s)\t[%s]\t%v\n", time.Now().Format(time.UnixDate), l.Name, level.String(), args)
 }
 
 func (l *Logger) Trace(args ...any) {
