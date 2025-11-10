@@ -73,6 +73,8 @@ func (room *Room) RemoveUser(user *User) error {
 
 	if len(room.Users) == 0 {
 		logger.Info(fmt.Sprintf("room %s is empty, leaving timeout of 30 seconds before destroy", room.Id))
+
+		room.timeoutDestroyStarted.Store(true)
 		go room.startDestroyTimeout()
 	}
 
@@ -83,7 +85,9 @@ func (room *Room) Destroy() {
 	close(room.cancelTimeoutDestroyChannel)
 
 	for _, user := range room.Users {
-		user.LeaveCurrentRoom("room has been destroyed")
+		if err := user.LeaveCurrentRoom("room has been destroyed"); err != nil {
+			logger.Warn(fmt.Sprintf("user %s failed leaving room %s, %s", user.Id, room.Id, err.Error()))
+		}
 	}
 
 	roomsMutex.Lock()
@@ -94,12 +98,7 @@ func (room *Room) Destroy() {
 }
 
 func (room *Room) startDestroyTimeout() {
-	if room.timeoutDestroyStarted.Load() {
-		return
-	}
-
 	timer := time.NewTimer(30 * time.Second)
-	room.timeoutDestroyStarted.Store(true)
 
 	defer func() {
 		timer.Stop()

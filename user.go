@@ -36,7 +36,9 @@ func NewUser(conn *websocket.Conn) *User {
 			_, data, err := user.Conn.ReadMessage()
 			if err != nil {
 				if user.Room != nil {
-					user.LeaveCurrentRoom("user disconnected")
+					if err := user.LeaveCurrentRoom("user disconnected"); err != nil {
+						logger.Warn(fmt.Sprintf("user %s failed leaving is current room during disconnection, %s", user.Id, err.Error()))
+					}
 				}
 				RemoveUser(user)
 				return
@@ -52,7 +54,9 @@ func NewUser(conn *websocket.Conn) *User {
 
 func (user *User) SendMessage(msg string) {
 	buffer := bytes.NewBufferString(msg)
-	user.Conn.WriteMessage(websocket.TextMessage, buffer.Bytes())
+	if err := user.Conn.WriteMessage(websocket.TextMessage, buffer.Bytes()); err != nil {
+		logger.Warn(fmt.Sprintf("failed sending message to user %s, %s", user.Id, err.Error()))
+	}
 }
 
 func (user *User) SendMessageJson(msg any) {
@@ -61,7 +65,9 @@ func (user *User) SendMessageJson(msg any) {
 		logger.Warn(fmt.Sprintf("failed sending json message, %s", err.Error()))
 		return
 	}
-	user.Conn.WriteMessage(websocket.TextMessage, payload)
+	if err := user.Conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+		logger.Warn(fmt.Sprintf("failed sending json message to user %s, %s", user.Id, err.Error()))
+	}
 }
 
 func (user *User) JoinRoom(room *Room) error {
