@@ -33,6 +33,7 @@
     </div>
     <div>
       <button onclick="createRoom()">Create Room</button>
+      <button onclick="createRoomWithAV1()">Create Room (AV1)</button>
       <button onclick="leaveRoom()">Leave Room</button>
       <button onclick="publish()">Publish stream</button>
     </div>
@@ -68,6 +69,10 @@
 
       function createRoom() {
         sendWs('{"type": "create_room"}');
+      }
+
+      function createRoomWithAV1() {
+        sendWs('{"type": "create_room", "video_codec": "av1"}');
       }
 
       function leaveRoom() {

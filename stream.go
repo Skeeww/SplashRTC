@@ -12,6 +12,8 @@ type IncomingStream struct {
 	Id             string                 `json:"id"`
 	Publisher      *User                  `json:"publisher"`
 	PeerConnection *webrtc.PeerConnection `json:"-"`
+
+	receiversChannel map[*webrtc.RTPReceiver]chan []byte
 }
 
 func NewIncomingStream(user *User) (*IncomingStream, error) {
@@ -23,8 +25,10 @@ func NewIncomingStream(user *User) (*IncomingStream, error) {
 		Id:             uuid.NewString(),
 		Publisher:      user,
 		PeerConnection: nil,
+
+		receiversChannel: make(map[*webrtc.RTPReceiver]chan []byte),
 	}
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+	pc, err := user.Room.Api.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
 				URLs: []string{"stun:stun2.l.google.com:19302"},
@@ -44,8 +48,12 @@ func NewIncomingStream(user *User) (*IncomingStream, error) {
 	stream.PeerConnection.OnICEConnectionStateChange(func(cs webrtc.ICEConnectionState) {
 		logger.Debug(fmt.Sprintf("ice state of stream %s changed to %s", stream.Id, cs.String()))
 	})
+	stream.PeerConnection.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
+		logger.Debug(fmt.Sprintf("peer state of stream %s changed to %s", stream.Id, pcs.String()))
+	})
 	stream.PeerConnection.OnTrack(func(t *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
 		logger.Debug(fmt.Sprintf("new track on stream %s => %s", stream.Id, t.ID()))
+		go stream.handleRTP(r)
 	})
 
 	if err := user.Room.AddInStream(stream); err != nil {
@@ -70,5 +78,23 @@ func (s *IncomingStream) AddIceCandidate(candidate webrtc.ICECandidateInit) {
 func (s *IncomingStream) Teardown() {
 	if err := s.PeerConnection.GracefulClose(); err != nil {
 		logger.Warn("failed closing peer connection", err.Error())
+	}
+}
+
+func (s *IncomingStream) handleRTP(r *webrtc.RTPReceiver) {
+	buffer := make([]byte, 1500)
+	s.receiversChannel[r] = make(chan []byte)
+
+	defer func() {
+		close(s.receiversChannel[r])
+		delete(s.receiversChannel, r)
+	}()
+
+	for {
+		_, _, err := r.Read(buffer)
+		if err != nil {
+			return
+		}
+		s.receiversChannel[r] <- buffer
 	}
 }

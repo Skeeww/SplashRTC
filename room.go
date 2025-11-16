@@ -9,12 +9,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pion/webrtc/v4"
 )
+
+type NewRoomOptions struct {
+	VideoCodec string `json:"video_codec,omitempty"`
+}
 
 type Room struct {
 	Id         string  `json:"id"`
 	Users      []*User `json:"users"`
 	usersMutex *sync.Mutex
+
+	Api *webrtc.API `json:"-"`
+
+	VideoCodec string `json:"video_codec"`
+	AudioCodec string `json:"audio_codec"`
 
 	InStreams      map[string]*IncomingStream `json:"in_streams"`
 	inStreamsMutex *sync.Mutex
@@ -28,11 +38,32 @@ var (
 	roomsMutex *sync.RWMutex    = new(sync.RWMutex)
 )
 
-func NewRoom() *Room {
+func NewRoom(opts *NewRoomOptions) (*Room, error) {
+	mediaEngine := new(webrtc.MediaEngine)
+
+	if opts != nil && opts.VideoCodec != "" {
+		switch opts.VideoCodec {
+		case "av1":
+			if err := addVideoCodecAV1(mediaEngine); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, errors.New("unsupported provided video codec")
+		}
+	} else {
+		if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+			return nil, err
+		}
+	}
+
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
+
 	room := &Room{
 		Id:         uuid.NewString(),
 		Users:      make([]*User, 0),
 		usersMutex: new(sync.Mutex),
+
+		Api: api,
 
 		InStreams:      make(map[string]*IncomingStream),
 		inStreamsMutex: new(sync.Mutex),
@@ -44,7 +75,7 @@ func NewRoom() *Room {
 
 	AddRoom(room)
 
-	return room
+	return room, nil
 }
 
 func (room *Room) AddUser(user *User) error {

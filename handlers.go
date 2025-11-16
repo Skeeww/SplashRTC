@@ -19,7 +19,7 @@ func (user *User) handleMessage(msg []byte) {
 	case "users_list":
 		user.handleUsersList()
 	case "create_room":
-		user.handleCreateRoom()
+		user.handleCreateRoom(msg)
 	case "leave_room":
 		user.handleLeaveRoom()
 	case "join_room":
@@ -37,13 +37,26 @@ func (user *User) handleUsersList() {
 	SendUsersList(user.SendMessage)
 }
 
-func (user *User) handleCreateRoom() {
+func (user *User) handleCreateRoom(msg []byte) {
 	if user.Room != nil {
 		user.SendMessageJson(NewReplyErrorRoomCreate("you are already in a room"))
 		return
 	}
 
-	room := NewRoom()
+	newRoomOptions := new(NewRoomOptions)
+	err := json.Unmarshal(msg, newRoomOptions)
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorRoomCreate("you provided wrongly formatted options"))
+	}
+
+	room, err := NewRoom(&NewRoomOptions{
+		VideoCodec: newRoomOptions.VideoCodec,
+	})
+	if err != nil {
+		user.SendMessageJson(NewReplyErrorRoomCreate(err.Error()))
+		return
+	}
+
 	logger.Info(fmt.Sprintf("user %s create a new room %s", user.Id, room.Id))
 
 	if err := user.JoinRoom(room); err != nil {

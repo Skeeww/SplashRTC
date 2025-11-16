@@ -38,12 +38,29 @@ func NewReplyUsersList(users []*User) UsersListReply {
 	}
 }
 
+type RoomCreateRequest struct {
+	VideoCodec string `json:"video_codec,omitempty"`
+}
+
 func NewReplyErrorRoomCreate(reason string) ErrorMessage {
 	return ErrorMessage{
 		Error:  "create_room_failure",
 		Reason: reason,
 	}
 }
+
+func NewRequestRoomCreate(msg []byte) (RoomCreateRequest, error) {
+	request := RoomCreateRequest{}
+
+	err := json.Unmarshal(msg, &request)
+	if err != nil {
+		return request, err
+	}
+
+	return request, nil
+}
+
+// TODO: Add reply once room has been created
 
 type RoomLeaveReply struct {
 	ServerToUserMessage
